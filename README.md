@@ -6,3 +6,5 @@ it will be set to 10% to avoid some newly installed games or apps being too loud
 
 
 
+# How to use
+WIP
