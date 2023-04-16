@@ -18,6 +18,51 @@
 #include <thread>
 
 
+
+const std::wstring REG_APP_NAME = L"YutingliaWindowsVolumeLimiter";
+
+
+
+void enableAutoStart()
+{
+	HKEY hKey;
+
+	// get reg
+	if (RegOpenKeyEx(HKEY_CURRENT_USER, _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)     
+	{
+		// get app path
+		TCHAR strExeFullDir[MAX_PATH];
+		GetModuleFileName(NULL, strExeFullDir, MAX_PATH);
+
+		// check reg exist
+		TCHAR strDir[MAX_PATH] = {};
+		DWORD nLength = MAX_PATH;
+		long result = RegGetValue(hKey, nullptr, REG_APP_NAME.c_str(), RRF_RT_REG_SZ, 0, strDir, &nLength);
+
+		if (result != ERROR_SUCCESS || _tcscmp(strExeFullDir, strDir) != 0)
+		{
+			RegSetValueEx(hKey, REG_APP_NAME.c_str(), 0, REG_SZ, (LPBYTE)strExeFullDir, (lstrlen(strExeFullDir) + 1) * sizeof(TCHAR));
+			RegCloseKey(hKey);
+		}
+	}
+}
+
+
+
+void disableAutoStart()
+{
+	HKEY hKey;
+	// get reg
+	if (RegOpenKeyEx(HKEY_CURRENT_USER, _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)
+	{
+		// delete reg value
+		RegDeleteValue(hKey, REG_APP_NAME.c_str());
+		RegCloseKey(hKey);
+	}
+}
+
+
+
 std::wstring getProcessNameFromPid(DWORD pid) {
 	HANDLE handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 
@@ -123,10 +168,20 @@ int main()
 	while (1)
 	{
 		std::cin >> userInput;
-		if (userInput.compare("quit") == 0)
+		if (userInput.compare("q") == 0)
 		{
 			std::cout << "Quit App" << std::endl;
 			break;
+		}
+		else if (userInput.compare("es") == 0)
+		{
+			std::cout << "Enable Auto Start" << std::endl;
+			enableAutoStart();
+		}
+		else if (userInput.compare("ds") == 0)
+		{
+			std::cout << "Disable Auto Start" << std::endl;
+			disableAutoStart();
 		}
 		else
 		{
