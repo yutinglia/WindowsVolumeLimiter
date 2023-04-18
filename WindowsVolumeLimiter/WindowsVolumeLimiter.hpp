@@ -114,6 +114,7 @@ void handleVolumes(IAudioSessionEnumerator* enumerator) {
 			simpleAudioVolume->SetMasterVolume(config.getSetVolume(), NULL);
 		}
 
+		simpleAudioVolume->Release();
 		session2->Release();
 		session->Release();
 	}
@@ -139,6 +140,9 @@ void handleVolumeLoop(BOOL* isRunningFlagPtr)
 	device->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&sessionManager);
 	std::this_thread::sleep_for(std::chrono::seconds(1));
 
+	deviceEnumerator->Release();
+	device->Release();
+
 	IAudioSessionEnumerator* enumerator = nullptr;
 
 	// loop
@@ -150,9 +154,6 @@ void handleVolumeLoop(BOOL* isRunningFlagPtr)
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
-	// release 
-	deviceEnumerator->Release();
-	device->Release();
 	sessionManager->Release();
 }
 
