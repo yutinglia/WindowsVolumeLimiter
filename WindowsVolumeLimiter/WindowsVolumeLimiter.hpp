@@ -5,6 +5,7 @@
 #include <endpointvolume.h>
 #include <audiopolicy.h>
 #include <psapi.h>
+#include <filesystem>
 
 
 #include <string>
@@ -12,15 +13,20 @@
 
 
 #include <atlstr.h>
+#include <atlconv.h>
 #include <tchar.h>
 
 
 #include <thread>
 
 
+#include "Config.hpp"
+
+
+namespace fs = std::filesystem;
 
 const std::wstring REG_APP_NAME = L"YutingliaWindowsVolumeLimiter";
-
+Config config = Config();
 
 
 void enableAutoStart()
@@ -30,18 +36,17 @@ void enableAutoStart()
 	// get reg
 	if (RegOpenKeyEx(HKEY_CURRENT_USER, _T("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)     
 	{
-		// get app path
-		TCHAR strExeFullDir[MAX_PATH];
-		GetModuleFileName(NULL, strExeFullDir, MAX_PATH);
+		// get bat path
+		auto batPath = config.getBatPath();
 
 		// check reg exist
 		TCHAR strDir[MAX_PATH] = {};
 		DWORD nLength = MAX_PATH;
 		long result = RegGetValue(hKey, nullptr, REG_APP_NAME.c_str(), RRF_RT_REG_SZ, 0, strDir, &nLength);
 
-		if (result != ERROR_SUCCESS || _tcscmp(strExeFullDir, strDir) != 0)
+		if (result != ERROR_SUCCESS || _tcscmp(batPath.c_str(), strDir) != 0)
 		{
-			RegSetValueEx(hKey, REG_APP_NAME.c_str(), 0, REG_SZ, (LPBYTE)strExeFullDir, (lstrlen(strExeFullDir) + 1) * sizeof(TCHAR));
+			RegSetValueEx(hKey, REG_APP_NAME.c_str(), 0, REG_SZ, (LPBYTE)batPath.c_str(), (lstrlen(batPath.c_str()) + 1) * sizeof(TCHAR));
 			RegCloseKey(hKey);
 		}
 	}
@@ -102,11 +107,11 @@ void handleVolumes(IAudioSessionEnumerator* enumerator) {
 		simpleAudioVolume->GetMasterVolume(&volume);
 
 		// set volume if too loud
-		if (volume >= .7)
+		if (volume >= config.getMaxVolume())
 		{
 			std::wstring processName = getProcessNameFromPid(pid);
-			std::wcout << processName << ": " << volume << " -> " << "0.1" << std::endl;
-			simpleAudioVolume->SetMasterVolume(.1, NULL);
+			std::wcout << processName << ": " << volume << " -> " << config.getSetVolume() << std::endl;
+			simpleAudioVolume->SetMasterVolume(config.getSetVolume(), NULL);
 		}
 
 		session2->Release();
@@ -116,52 +121,49 @@ void handleVolumes(IAudioSessionEnumerator* enumerator) {
 
 
 
-void handleVolumeLoop(IAudioSessionEnumerator* enumerator, BOOL* isRunningFlagPtr)
-{
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-	while (*isRunningFlagPtr)
-	{
-		handleVolumes(enumerator);
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	}
-}
-
-
-
-int main()
+void handleVolumeLoop(BOOL* isRunningFlagPtr)
 {
 	// init com
 	HRESULT hr = CoInitialize(NULL);
-	if (S_OK != hr)
-	{
-		MessageBox(NULL, L"COM Initialize Failed!", L"Error", MB_ICONERROR);
-		return 1;
-	}
 
 	// create MMDeviceEnumerator instance
 	IMMDeviceEnumerator* deviceEnumerator = nullptr;
 	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IMMDeviceEnumerator), (LPVOID*)&deviceEnumerator);
-	if (S_OK != hr)
-	{
-		MessageBox(NULL, L"Create MMDeviceEnumerator Instance Failed!", L"Error", MB_ICONERROR);
-		return 1;
-	}
 
 	// get default audio device
 	IMMDevice* device = nullptr;
 	deviceEnumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &device);
-	
+
 	// get audio session manager
 	IAudioSessionManager2* sessionManager = nullptr;
 	device->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&sessionManager);
+	std::this_thread::sleep_for(std::chrono::seconds(1));
 
-	// get session enum
 	IAudioSessionEnumerator* enumerator = nullptr;
-	sessionManager->GetSessionEnumerator(&enumerator);
+
+	// loop
+	while (*isRunningFlagPtr)
+	{
+		sessionManager->GetSessionEnumerator(&enumerator);
+		handleVolumes(enumerator);
+		enumerator->Release();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+
+	// release 
+	deviceEnumerator->Release();
+	device->Release();
+	sessionManager->Release();
+}
+
+
+int main()
+{
+	std::cout << "Current config: maxVolume => " << config.getMaxVolume() << ", setVolume =>" << config.getSetVolume() << std::endl;
 
 	// start handle volume thread
 	BOOL isRunning = TRUE;
-	std::thread handleVolumeThread(handleVolumeLoop, enumerator, &isRunning);
+	std::thread handleVolumeThread(handleVolumeLoop, &isRunning);
 
 	// user input loop
 	std::string userInput;
@@ -189,14 +191,8 @@ int main()
 		}
 		userInput.clear();
 	}
-
+	 
 	// wait backend thread stop
 	isRunning = FALSE;
 	handleVolumeThread.join();
-
-	// release 
-	deviceEnumerator->Release();
-	device->Release();
-	sessionManager->Release();
-	enumerator->Release();
 }
